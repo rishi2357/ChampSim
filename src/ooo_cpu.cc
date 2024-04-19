@@ -20,6 +20,7 @@
 #include <chrono>
 #include <cmath>
 #include <numeric>
+#include <map>
 
 #include "cache.h"
 #include "champsim.h"
@@ -29,6 +30,23 @@
 #include <fmt/chrono.h>
 #include <fmt/core.h>
 #include <fmt/ranges.h>
+#include "msl/fwcounter.h"
+
+namespace
+{
+/* CLAP Table definitions */
+constexpr std::size_t CLAP_TABLE_SIZE = 256;
+constexpr std::size_t CLAP_TAG_SIZE   = 64;
+constexpr std::size_t CLC_BITS        = 4;
+
+std::map<uint64_t, std::array<champsim::msl::fwcounter<CLC_BITS>, CLAP_TABLE_SIZE>> clap_table;
+
+/* CRAC definitions */
+constexpr std::size_t CRAC_TABLE_SIZE = 512;
+constexpr std::size_t RAC_BITS        = 4;
+
+std::map<uint64_t, std::array<champsim::msl::fwcounter<RAC_BITS>, CRAC_TABLE_SIZE>> crac_table;
+} // namespace
 
 std::chrono::seconds elapsed_time();
 
@@ -247,6 +265,11 @@ long O3_CPU::fetch_instruction()
     auto success = do_fetch_instruction(l1i_req_begin, l1i_req_end);
     if (success) {
       std::for_each(l1i_req_begin, l1i_req_end, [](auto& x) { x.fetched = INFLIGHT; });
+      /* Check for an entry in the CLAP table for each fetched instruction. Only loads should be found, if any. */
+      std::for_each(l1i_req_begin, l1i_req_end, [](auto& x){
+        if(clap_table.find(x.ip) != clap_table.end())
+          x.is_fatload = 1;
+        });
       ++progress;
     }
 
@@ -487,6 +510,14 @@ long O3_CPU::operate_lsq()
       if (success) {
         --load_bw;
         lq_entry->fetch_issued = true;
+        if(clar_table.find(x.ip) != clap_table.end())
+        {
+          auto crac_count = clar_table[x.ip];
+          if(crac_count == 0U)
+          {
+            
+          }
+        }
       }
     }
   }
