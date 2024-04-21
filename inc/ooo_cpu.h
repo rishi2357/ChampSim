@@ -166,6 +166,7 @@ public:
   long operate_lsq();
   long complete_inflight_instruction();
   long handle_memory_return();
+  void update_clap_table();
   long retire_rob();
 
   bool do_init_instruction(ooo_model_instr& instr);
@@ -182,6 +183,7 @@ public:
   void do_finish_store(const LSQ_ENTRY& sq_entry);
   bool do_complete_store(const LSQ_ENTRY& sq_entry);
   bool execute_load(const LSQ_ENTRY& lq_entry);
+  void do_crac_check(const LSQ_ENTRY& lq_entry);
 
   uint64_t roi_instr() const { return roi_stats.instrs(); }
   uint64_t roi_cycle() const { return roi_stats.cycles(); }

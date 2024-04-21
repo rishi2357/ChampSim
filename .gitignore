@@ -3,6 +3,7 @@ _configuration.mk
 
 **/__pycache__/
 *.pyc
+*.code-workspace
 
 bin/
 
