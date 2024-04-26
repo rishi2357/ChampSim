@@ -21,6 +21,7 @@
 #include <cmath>
 #include <numeric>
 #include <map>
+#include <iostream>
 
 #include "cache.h"
 #include "champsim.h"
@@ -36,19 +37,19 @@
 namespace
 {
 /* CLAP Table definitions */
-constexpr std::size_t CLAP_TABLE_SIZE = 256;
-constexpr std::size_t CLC_BITS        = 4;
+constexpr std::size_t CLAP_TABLE_SIZE  = 256;
+constexpr std::size_t CLAP_TABLE_PRIME = 251;
+constexpr std::size_t CLC_BITS         = 4;
 
-std::map<uint64_t, std::array<champsim::msl::fwcounter<CLC_BITS>, CLAP_TABLE_SIZE>> clap_table;
-}
+std::map<uint64_t, champsim::msl::fwcounter<CLC_BITS>> clap_table;
 
-namespace
-{
 /* CRAC definitions */
-constexpr std::size_t CRAC_TABLE_SIZE = 512;
-constexpr std::size_t RAC_BITS        = 4;
+constexpr std::size_t CRAC_TABLE_SIZE  = 64;
+constexpr std::size_t RAC_BITS         = 4;
 
-std::map<uint64_t, std::array<champsim::msl::fwcounter<RAC_BITS>, CRAC_TABLE_SIZE>> crac_table;
+std::map<uint8_t, std::pair<champsim::msl::fwcounter<RAC_BITS>, uint64_t>> crac_table;
+
+champsim::msl::fwcounter<CLC_BITS> rac_count;
 }
 
 std::chrono::seconds elapsed_time();
@@ -269,12 +270,18 @@ long O3_CPU::fetch_instruction()
     if (success) {
       std::for_each(l1i_req_begin, l1i_req_end, [](auto& x) { x.fetched = INFLIGHT; });
       /* Check for an entry in the CLAP table for each fetched instruction. Only loads should be found, if any. */
-      std::for_each(l1i_req_begin, l1i_req_end, [](auto& x){
-        if(clap_table.find(x.ip) != clap_table.end())
-          x.is_fatload = true;
-        });
+      /* CLAP is indexed into using the instruction pointer. */
+      std::for_each(l1i_req_begin, l1i_req_end, [&](auto& x) {
+          auto clap_index = x.ip % ::CLAP_TABLE_PRIME;
+          if(clap_table.find(clap_index) != clap_table.end()) {
+            x.is_fatload = true;
+            //std::cout<< " Found a fatload! " << std::endl;
+          }
+          else
+            x.is_fatload = false;
+          });
+        }
       ++progress;
-    }
 
     l1i_req_begin = std::find_if(l1i_req_end, std::end(IFETCH_BUFFER), fetch_ready);
   }
@@ -570,30 +577,35 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
 */
 void O3_CPU::do_crac_check(const LSQ_ENTRY& lq_entry)
 {
-  if(crac_table.find(lq_entry.ip) != crac_table.end()) {
-    if(crac_table[lq_entry.ip][lq_entry.ip].value() == 0U) {
-      for (auto rob_entry = std::begin(ROB); rob_entry != std::end(ROB); ++rob_entry) {
-        if(rob_entry->ip == lq_entry.ip) {
-          rob_entry->PFLC = true;
-          break;
-        }
-      }
-    }
-    else {
-      crac_table[lq_entry.ip][lq_entry.ip] = crac_table[lq_entry.ip][lq_entry.ip].value() + 1U;
-    }
-  }
-  else {
-    crac_table.emplace(lq_entry.ip, 0);
-    for (auto rob_entry = std::begin(ROB); rob_entry != std::end(ROB); ++rob_entry) {
+  /* Index is obtained from the set index bits of the load source address (VA) */
+  /* TBD: Bit extraction should be made configurable, based on L1 DCache number of sets. */
+  auto index = ((lq_entry.virtual_address & 0xFC0) >> 6U);
+
+  /* If no prior entry is found, create one. */
+  if(crac_table.find(index) == crac_table.end())
+    crac_table[index] = std::make_pair(0U, 0U);
+
+  /* If the load instruction sees an RAC value of 0, it is a potential fat load. Set the PFLC bit in ROB
+     corresponding to the instruction. Increment RAC to 1, and store the corresponding ip, which is used to
+     find the RAC value of the load instruction during ROB retire phase and update the CLAP.
+     If load instruction sees a non-zero RAC, there is a potential fat load in-flight, so just increment RAC
+     value. */
+  if(crac_table[index].first.value() == 0U) {
+    crac_table[index].first  = crac_table[index].first.value() + 1U;
+    crac_table[index].second = lq_entry.ip;
+    for(auto rob_entry = std::begin(ROB); rob_entry != std::end(ROB); ++rob_entry)
       if(rob_entry->ip == lq_entry.ip) {
         rob_entry->PFLC = true;
         break;
       }
-    }
   }
+  else
+    crac_table[index].first = crac_table[index].first.value() + 1U;
 
-  fmt::print("Load key/ip : {} and CRAC value : {}\n", lq_entry.ip, crac_table[lq_entry.ip]);
+  /* Just for debug. Logs into output.txt if "freopen( "output.txt", "w", stdout );" included in main.cc. */
+  std::cout << "Load key : " << index <<" VA : " << lq_entry.virtual_address << " index : " << index << " CRAC value : " \
+            <<crac_table[index].first.value() << " CRAC ip : " << crac_table[index].second << " LQ ip : " << lq_entry.ip \
+            << std::endl;
 }
 
 void O3_CPU::do_complete_execution(ooo_model_instr& instr)
@@ -695,14 +707,25 @@ long O3_CPU::retire_rob()
 
 void O3_CPU::update_clap_table()
 {
-  for (auto rob_entry = std::find_if(std::cbegin(ROB), std::cend(ROB), \
-                        [](const auto& x) { return x.executed == COMPLETED; }); \
-                        rob_entry != std::end(ROB); ++rob_entry) {
- 
-    if(crac_table.find(rob_entry->ip) != crac_table.end() && rob_entry->PFLC == true && \
-       crac_table[rob_entry->ip][rob_entry->ip] != 0U) {
-      clap_table.emplace(rob_entry->ip, (crac_table[rob_entry->ip][rob_entry->ip]-1U));
-    }
+  /* For load instructions in ROB which have completed and have their PFLC bit set, their ip searched for
+     in the CRAC table, and the corresponding RAC value - 1 is stored in the CLAP table, which is indexed 
+     into by the load instruction's ip. Then reset the CRAC entry. */
+  for (auto rob_entry = std::find_if(std::begin(ROB), std::end(ROB), \
+                    [](const auto& x) { return x.executed == COMPLETED && x.PFLC == true; }); \
+                    rob_entry != std::end(ROB); ++rob_entry) {
+    std::for_each(std::begin(crac_table), std::end(crac_table), [&](auto& entry) {
+      if(entry.second.second == rob_entry->ip) {
+        auto clap_index = rob_entry->ip % ::CLAP_TABLE_PRIME;
+        clap_table[clap_index] = entry.second.first.value() - 1U;
+        /* Just for debug. Logs into output.txt if "freopen( "output.txt", "w", stdout );" included in main.cc. */
+        std::cout << "CLAP key : " << clap_index << " CLAP value : " \
+          << clap_table[clap_index].value() << " CLAP ip : " << rob_entry->ip << " CRAC ip : " << entry.second.second << \
+          std::endl;
+
+        entry.second.first  = 0U;
+        entry.second.second = 0U;
+      }
+    });
   }
 }
 
