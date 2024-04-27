@@ -43,6 +43,10 @@ struct ooo_model_instr {
   uint64_t ip = 0;
   uint64_t event_cycle = 0;
 
+  /*CLC count - Will use this value only when instr is a load i.e., when is_load = 1*/
+  uint64_t load_clc = 0;
+  bool is_load = 0;
+
   bool is_branch = 0;
   bool branch_taken = 0;
   bool branch_prediction = 0;
@@ -138,5 +142,6 @@ public:
 
   static bool program_order(const ooo_model_instr& lhs, const ooo_model_instr& rhs) { return lhs.instr_id < rhs.instr_id; }
 };
+
 
 #endif

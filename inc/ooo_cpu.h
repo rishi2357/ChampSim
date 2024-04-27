@@ -43,6 +43,8 @@
 
 enum STATUS { INFLIGHT = 1, COMPLETED = 2 };
 
+
+
 class CACHE;
 class CacheBus
 {
@@ -94,6 +96,62 @@ struct LSQ_ENTRY {
 class O3_CPU : public champsim::operable
 {
 public:
+  /********************** CLAR and CMAP definition and declaration **********************************/
+  /* MACRO To define entry count of CLAR*/
+  #define LOAD_WORD_SIZE 4 //Defining load to move 4 bytes of data
+  #define CLAR_LOAD_WORD_COUNT BLOCK_SIZE/LOAD_WORD_SIZE
+  #define CMAP_TABLE_SIZE 256 //Defining as 256 for the number of CMAP entries - number of architectural registers
+  #define REGION_SIZE BLOCK_SIZE //Defining a CLAR region as the size of a Cache Block 
+  /* Definition of Struct CLAR */
+  // struct clardef{
+  //   uint8_t valid = 0;
+  //   uint8_t data_rdy = 0;
+  //   uint64_t prc = 0;
+  //   uint8_t bank_no = 0;
+  //   uint64_t rva = 0; //check bit length
+  //   uint64_t cpte = 0; //check bit length
+  //   uint64_t active_count = 0;
+  //   std::array<uint64_t, CLAR_LOAD_WORD_COUNT> store_ele = {};
+
+  // };
+
+  // /* Definition of Struct CMAP */
+  // struct cmapdef{
+  //   uint8_t valid_cmap = 0;
+  //   uint8_t bank_no_cmap = 0;
+  //   uint64_t store_ele_cmap = 0;
+  //   uint16_t regno = 0;
+  //   clardef cd;
+  //   ooo_model_instr instr_cmap;
+  //   uint64_t region_number = 0;
+  // };
+
+    struct clardef{
+    uint8_t valid;
+    uint8_t data_rdy;
+    uint64_t prc;
+    uint8_t bank_no;
+    uint64_t rva; //check bit length
+    uint64_t cpte; //check bit length
+    uint64_t active_count;
+    std::array<uint64_t, CLAR_LOAD_WORD_COUNT> store_ele;
+
+  };
+
+  /* Definition of Struct CMAP */
+  struct cmapdef{
+    uint8_t valid_cmap;
+    uint8_t bank_no_cmap;
+    uint64_t store_ele_cmap;
+    uint16_t regno;
+    clardef cd;
+    ooo_model_instr instr_cmap;
+    uint64_t region_number ;
+  };
+
+  //declaring CMAP//
+  std::deque<cmapdef> CMAP;
+  /***************************************************************************************************/
   uint32_t cpu = 0;
 
   // cycle
@@ -130,6 +188,8 @@ public:
 
   std::vector<std::optional<LSQ_ENTRY>> LQ;
   std::deque<LSQ_ENTRY> SQ;
+
+  ////////////////
 
   std::array<std::vector<std::reference_wrapper<ooo_model_instr>>, std::numeric_limits<uint8_t>::max() + 1> reg_producers;
 

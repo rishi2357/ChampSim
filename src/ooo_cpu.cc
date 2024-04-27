@@ -30,6 +30,7 @@
 #include <fmt/core.h>
 #include <fmt/ranges.h>
 
+
 std::chrono::seconds elapsed_time();
 
 long O3_CPU::operate()
@@ -300,6 +301,9 @@ long O3_CPU::decode_instruction()
 
     // Resume fetch
     if (db_entry.branch_mispredicted) {
+      //CMAP is cleared on invalidation
+	    // CMAP.clear()
+	    
       // These branches detect the misprediction at decode
       if ((db_entry.branch_type == BRANCH_DIRECT_JUMP) || (db_entry.branch_type == BRANCH_DIRECT_CALL)
           || (((db_entry.branch_type == BRANCH_CONDITIONAL) || (db_entry.branch_type == BRANCH_OTHER)) && db_entry.branch_taken == db_entry.branch_prediction)) {
@@ -325,19 +329,65 @@ void O3_CPU::do_dib_update(const ooo_model_instr& instr) { DIB.fill(instr.ip); }
 long O3_CPU::dispatch_instruction()
 {
   auto available_dispatch_bandwidth = DISPATCH_WIDTH;
-
+ 
   // dispatch DISPATCH_WIDTH instructions into the ROB
   while (available_dispatch_bandwidth > 0 && !std::empty(DISPATCH_BUFFER) && DISPATCH_BUFFER.front().event_cycle < current_cycle && std::size(ROB) != ROB_SIZE
          && ((std::size_t)std::count_if(std::begin(LQ), std::end(LQ), [](const auto& lq_entry) { return !lq_entry.has_value(); })
              >= std::size(DISPATCH_BUFFER.front().source_memory))
          && ((std::size(DISPATCH_BUFFER.front().destination_memory) + std::size(SQ)) <= SQ_SIZE)) {
-    ROB.push_back(std::move(DISPATCH_BUFFER.front()));
-    DISPATCH_BUFFER.pop_front();
-    do_memory_scheduling(ROB.back());
+   
+      /*******************************************************************Classifying Loads with CMAP ******************************************************/
+      //For each dispatch instruction, check if it is a load. 
+      if(DISPATCH_BUFFER.front().source_memory.size() != 0 && DISPATCH_BUFFER.front().destination_registers.size() != 0)
+          DISPATCH_BUFFER.front().is_load = 1;
 
-    available_dispatch_bandwidth--;
+
+      if(DISPATCH_BUFFER.front().is_load && DISPATCH_BUFFER.front().source_memory.size() == 1) //Service instruction only if it is a load with one source memory
+      {
+        // Find the CMAP bank (row) with the smallest PRC value
+        auto minPRC_CMAPEntry = std::min_element(CMAP.begin(), CMAP.end(), [](const cmapdef& a, const cmapdef& b) {return a.cd.prc < b.cd.prc;});
+        // Calculate the region address from the load address
+        auto dib_front_load_region_address = DISPATCH_BUFFER.front().source_memory[0] / BLOCK_SIZE;
+        // Calculate the word offset within region
+        auto dib_front_load_storage_element = DISPATCH_BUFFER.front().source_memory[0] % BLOCK_SIZE;
+
+        //Loop to iterate through entries of CMAP table to check for a match
+          for(uint64_t CMAP_INDEX = 0; CMAP_INDEX < std::min(CMAP_TABLE_SIZE, CMAP.size()); CMAP_INDEX++){
+              CMAP[CMAP_INDEX].valid_cmap = 1; 
+              if(dib_front_load_region_address == CMAP[CMAP_INDEX].region_number && CMAP[CMAP_INDEX].valid_cmap) //Need to change from reg implemetation
+              {   
+                  //Check if the Cache Line Region Stored in CMAP row has a load word
+                  if(CMAP[CMAP_INDEX].cd.store_ele[CMAP[CMAP_INDEX].store_ele_cmap])
+                  {
+                    //LOAD-CLAR: dispatching as load_clar
+                    // ROB.push_back(std::move(CMAP[CMAP_INDEX].instr_cmap[CMAP[CMAP_INDEX].store_ele_cmap]));
+                    CMAP[CMAP_INDEX].cd.prc--;
+                  
+                  }
+                  else if(DISPATCH_BUFFER.front().load_clc > minPRC_CMAPEntry->cd.prc)
+                  {
+                    //LOAD-FAT: dispatching as fat_load - Repalce bank with lowest PRC as location the data needs to be written into
+                    CMAP[CMAP_INDEX].bank_no_cmap = CMAP[CMAP_INDEX].cd.bank_no;
+                    CMAP[CMAP_INDEX].cd.prc = DISPATCH_BUFFER.front().load_clc;
+                    CMAP[CMAP_INDEX].cd.data_rdy = 0;
+                    ROB.push_back(std::move(CMAP[CMAP_INDEX].instr_cmap));
+                  
+                  }
+                  else
+                    //LOAD-NORMAL: dispatch normal load
+                    ROB.push_back(std::move(DISPATCH_BUFFER.front()));                  
+              }
+          }
+      }
+      DISPATCH_BUFFER.pop_front();
+      do_memory_scheduling(ROB.back());
+  
+      available_dispatch_bandwidth--;
+  
+  
+      /*************************************************************************************************************************************************************/
   }
-
+ 
   return DISPATCH_WIDTH - available_dispatch_bandwidth;
 }
 
@@ -525,6 +575,21 @@ bool O3_CPU::do_complete_store(const LSQ_ENTRY& sq_entry)
 bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
 {
   CacheBus::request_type data_packet;
+  
+  //adding load clar here
+  for(uint64_t CMAP_INDEX = 0; CMAP_INDEX < CMAP_TABLE_SIZE; CMAP_INDEX++){
+    if(CMAP[CMAP_INDEX].cd.data_rdy)
+    {
+      
+      data_packet.v_address = CMAP[CMAP_INDEX].cd.rva;
+      // data_packet.instr_id = CMAP[CMAP_INDEX].cd.instr_id;
+      // data_packet.ip = CMAP.[CMAP_INDEX].cd.ip;
+      // CMAP.pop_front();
+      return true; //CLAR is able to handle the load and we don't increment cache accesses
+    }
+    //
+  }
+
   data_packet.v_address = lq_entry.virtual_address;
   data_packet.instr_id = lq_entry.instr_id;
   data_packet.ip = lq_entry.ip;
