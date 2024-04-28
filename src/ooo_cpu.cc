@@ -355,6 +355,7 @@ long O3_CPU::dispatch_instruction()
               //LOAD-CLAR Check: i) If Load Address in the region matches CMAP region number ii) If CMAP entry is Valid iii) If the Cache Line Region Stored in CMAP row has a load word
               if(dib_front_load_region_address == CMAP[CMAP_INDEX].region_number && CMAP[CMAP_INDEX].valid_cmap && (CMAP[CMAP_INDEX].CLAR.storage_elements[CMAP[CMAP_INDEX].storage_element_index] != 0))
               {
+                //fmt::print("Load CLAR dispatched, instr_id: {} ip: {:#x}\n", DISPATCH_BUFFER.front().instr_id, DISPATCH_BUFFER.front().ip);
                 //LOAD-CLAR: i) dispatching to ROB as load_clar ii) PRC for that CLAR-bank is decremented iii) CLAR-Bank ActiveAccesses incremented
                 ROB.push_back(std::move(CMAP[CMAP_INDEX].instr_cmap));    
                 CMAP[CMAP_INDEX].CLAR.active_count++;   //Increment Active Accesses
@@ -362,24 +363,28 @@ long O3_CPU::dispatch_instruction()
                 CMAP[CMAP_INDEX].CLAR.prc--; //Decrement Pending Remaining Count for CLAR-Bank
                 if(CMAP[CMAP_INDEX].CLAR.prc == 0)
                     CMAP[CMAP_INDEX].valid_cmap = 0;
-              }              
-          
+              }
           }
           //LOAD-FAT Check: If CLC obtained > min PRC
           if((DISPATCH_BUFFER.front().load_clc > minPRC_CMAP_Entry->CLAR.prc) && is_load_clar == false)
           {
+            //fmt::print("Fat Load dispatched, instr_id: {} ip: {:#x}\n", DISPATCH_BUFFER.front().instr_id, DISPATCH_BUFFER.front().ip);
             //LOAD-FAT: dispatching as fat_load - Replace bank with lowest PRC as location the data needs to be written into
             minPRC_CMAP_Entry->valid_cmap = 1;
             minPRC_CMAP_Entry->CLAR.prc = DISPATCH_BUFFER.front().load_clc;
             minPRC_CMAP_Entry->CLAR.data_rdy = 0;
             minPRC_CMAP_Entry->instr_cmap = DISPATCH_BUFFER.front();
             ROB.push_back(std::move(minPRC_CMAP_Entry->instr_cmap));
-          
           }
-          else
+          else {
             //LOAD-NORMAL: dispatch normal load
-            ROB.push_back(std::move(DISPATCH_BUFFER.front()));    
+            ROB.push_back(std::move(DISPATCH_BUFFER.front()));
+            //fmt::print("Normal Load dispatched, instr_id: {} ip: {:#x}\n", DISPATCH_BUFFER.front().instr_id, DISPATCH_BUFFER.front().ip);
+          }
       }
+      else
+        ROB.push_back(std::move(DISPATCH_BUFFER.front()));
+
       DISPATCH_BUFFER.pop_front();
       do_memory_scheduling(ROB.back());
   
