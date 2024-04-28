@@ -52,6 +52,7 @@ std::map<uint8_t, std::pair<champsim::msl::fwcounter<RAC_BITS>, uint64_t>> crac_
 champsim::msl::fwcounter<CLC_BITS> rac_count;
 }
 
+
 std::chrono::seconds elapsed_time();
 
 long O3_CPU::operate()
@@ -275,7 +276,8 @@ long O3_CPU::fetch_instruction()
           auto clap_index = x.ip % ::CLAP_TABLE_PRIME;
           if(clap_table.find(clap_index) != clap_table.end()) {
             x.is_fatload = true;
-            //std::cout<< " Found a fatload! " << std::endl;
+            x.load_clc = clap_table[clap_index].value();
+            std::cout<< " Found a fatload! " << x.ip << " CLAP value = " << x.load_clc <<std::endl;
           }
           else
             x.is_fatload = false;
@@ -333,6 +335,9 @@ long O3_CPU::decode_instruction()
 
     // Resume fetch
     if (db_entry.branch_mispredicted) {
+      //CMAP is invalidated on mispredication - use default constructor to reset all values
+	    std::fill(CMAP.begin(), CMAP.end(), cmapdef());
+
       // These branches detect the misprediction at decode
       if ((db_entry.branch_type == BRANCH_DIRECT_JUMP) || (db_entry.branch_type == BRANCH_DIRECT_CALL)
           || (((db_entry.branch_type == BRANCH_CONDITIONAL) || (db_entry.branch_type == BRANCH_OTHER)) && db_entry.branch_taken == db_entry.branch_prediction)) {
@@ -358,19 +363,71 @@ void O3_CPU::do_dib_update(const ooo_model_instr& instr) { DIB.fill(instr.ip); }
 long O3_CPU::dispatch_instruction()
 {
   auto available_dispatch_bandwidth = DISPATCH_WIDTH;
-
+ 
   // dispatch DISPATCH_WIDTH instructions into the ROB
   while (available_dispatch_bandwidth > 0 && !std::empty(DISPATCH_BUFFER) && DISPATCH_BUFFER.front().event_cycle < current_cycle && std::size(ROB) != ROB_SIZE
          && ((std::size_t)std::count_if(std::begin(LQ), std::end(LQ), [](const auto& lq_entry) { return !lq_entry.has_value(); })
              >= std::size(DISPATCH_BUFFER.front().source_memory))
          && ((std::size(DISPATCH_BUFFER.front().destination_memory) + std::size(SQ)) <= SQ_SIZE)) {
-    ROB.push_back(std::move(DISPATCH_BUFFER.front()));
-    DISPATCH_BUFFER.pop_front();
-    do_memory_scheduling(ROB.back());
+   
+      /*******************************************************************Classifying Loads with CMAP ******************************************************/
+      //For each dispatch instruction, check if it is a load. 
+      if(DISPATCH_BUFFER.front().source_memory.size() != 0 && DISPATCH_BUFFER.front().destination_registers.size() != 0)
+          DISPATCH_BUFFER.front().is_load = 1;
 
-    available_dispatch_bandwidth--;
+
+      if(DISPATCH_BUFFER.front().is_load && DISPATCH_BUFFER.front().source_memory.size() == 1) //Service instruction only if it is a load with one source memory
+      {
+        // Find the CMAP bank (row) with the smallest PRC value
+        auto minPRC_CMAP_Entry = std::min_element(CMAP.begin(), CMAP.end(), [](const cmapdef& a, const cmapdef& b) {return a.CLAR.prc < b.CLAR.prc;});
+        // Calculate the region address from the load address
+        auto dib_front_load_region_address = DISPATCH_BUFFER.front().source_memory[0] / REGION_SIZE;
+        bool is_load_clar = false;
+
+        //Loop to iterate through entries of CMAP table to check for a match
+        for(uint64_t CMAP_INDEX = 0; CMAP_INDEX < CMAP_TABLE_SIZE; CMAP_INDEX++){
+              //LOAD-CLAR Check: i) If Load Address in the region matches CMAP region number ii) If CMAP entry is Valid iii) If the Cache Line Region Stored in CMAP row has a load word
+              if(dib_front_load_region_address == CMAP[CMAP_INDEX].region_number && CMAP[CMAP_INDEX].valid_cmap && (CMAP[CMAP_INDEX].CLAR.storage_elements[CMAP[CMAP_INDEX].storage_element_index] != 0))
+              {
+                fmt::print("Load CLAR dispatched, instr_id: {} ip: {:#x}\n", DISPATCH_BUFFER.front().instr_id, DISPATCH_BUFFER.front().ip);
+                //LOAD-CLAR: i) dispatching to ROB as load_clar ii) PRC for that CLAR-bank is decremented iii) CLAR-Bank ActiveAccesses incremented
+                ROB.push_back(std::move(CMAP[CMAP_INDEX].instr_cmap));    
+                CMAP[CMAP_INDEX].CLAR.active_count++;   //Increment Active Accesses
+                is_load_clar = true; //Set Load CLAR to True
+                CMAP[CMAP_INDEX].CLAR.prc--; //Decrement Pending Remaining Count for CLAR-Bank
+                if(CMAP[CMAP_INDEX].CLAR.prc == 0)
+                    CMAP[CMAP_INDEX].valid_cmap = 0;
+              }
+          }
+          //LOAD-FAT Check: If CLC obtained > min PRC
+          if((DISPATCH_BUFFER.front().load_clc > minPRC_CMAP_Entry->CLAR.prc) && is_load_clar == false)
+          {
+            fmt::print("Fat Load dispatched, instr_id: {} ip: {:#x}\n", DISPATCH_BUFFER.front().instr_id, DISPATCH_BUFFER.front().ip);
+            //LOAD-FAT: dispatching as fat_load - Replace bank with lowest PRC as location the data needs to be written into
+            minPRC_CMAP_Entry->valid_cmap = 1;
+            minPRC_CMAP_Entry->CLAR.prc = DISPATCH_BUFFER.front().load_clc;
+            minPRC_CMAP_Entry->CLAR.data_rdy = 0;
+            minPRC_CMAP_Entry->instr_cmap = DISPATCH_BUFFER.front();
+            ROB.push_back(std::move(minPRC_CMAP_Entry->instr_cmap));
+          }
+          else {
+            //LOAD-NORMAL: dispatch normal load
+            ROB.push_back(std::move(DISPATCH_BUFFER.front()));
+            fmt::print("Normal Load dispatched, instr_id: {} ip: {:#x}\n", DISPATCH_BUFFER.front().instr_id, DISPATCH_BUFFER.front().ip);
+          }
+      }
+      else
+        ROB.push_back(std::move(DISPATCH_BUFFER.front()));
+
+      DISPATCH_BUFFER.pop_front();
+      do_memory_scheduling(ROB.back());
+  
+      available_dispatch_bandwidth--;
+  
+  
+      /*************************************************************************************************************************************************************/
   }
-
+ 
   return DISPATCH_WIDTH - available_dispatch_bandwidth;
 }
 
@@ -559,10 +616,44 @@ bool O3_CPU::do_complete_store(const LSQ_ENTRY& sq_entry)
 bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
 {
   CacheBus::request_type data_packet;
+
   data_packet.v_address = lq_entry.virtual_address;
   data_packet.instr_id = lq_entry.instr_id;
   data_packet.ip = lq_entry.ip;
 
+    
+  //adding load clar here
+  // Calculate the region address from the load address
+  auto lq_load_region_address = lq_entry.virtual_address / REGION_SIZE;
+
+  for(uint64_t CMAP_INDEX = 0; CMAP_INDEX < CMAP_TABLE_SIZE; CMAP_INDEX++){
+    if(CMAP[CMAP_INDEX].CLAR.data_rdy && (lq_load_region_address = CMAP[CMAP_INDEX].region_number))
+    {  
+      CMAP[CMAP_INDEX].CLAR.active_count--; 
+      return true; //CLAR is able to handle the load, don't increment L1 cache accesses, decrement Active Accesses to LOAD-CLAR-bank
+    }
+  }
+  //If Load is Fat-Load, service with L1 Access and update CLAR
+  for(uint64_t CMAP_INDEX = 0; CMAP_INDEX < CMAP_TABLE_SIZE; CMAP_INDEX++){
+    //Fat-Load instr-ID must match lq_entry Instr ID, must be a valid CMAP entry and there must be no other Active Accesses to that entry
+    if((CMAP[CMAP_INDEX].instr_cmap.instr_id == lq_entry.instr_id) && CMAP[CMAP_INDEX].valid_cmap && (CMAP[CMAP_INDEX].CLAR.active_count == 0))
+    { 
+      
+      if(L1D_bus.issue_read(data_packet)){
+        //Successful movement from L1D to CLAR-Bank. Populating CMAP and CLAR
+        CMAP[CMAP_INDEX].region_number = lq_entry.virtual_address % REGION_SIZE;
+        CMAP[CMAP_INDEX].storage_element_index = CMAP[CMAP_INDEX].region_number/LOAD_WORD_SIZE;
+        CMAP[CMAP_INDEX].CLAR.valid = 1; 
+        CMAP[CMAP_INDEX].CLAR.rva = lq_entry.virtual_address;
+        CMAP[CMAP_INDEX].CLAR.storage_elements[CMAP[CMAP_INDEX].storage_element_index] = 1;
+        //CPTE Page Walk happens here
+        //CMAP[CMAP_INDEX].CLAR.cpte = ???;
+        return true;
+      }
+      else
+        return false;
+    }
+  }
   if constexpr (champsim::debug_print) {
     fmt::print("[LQ] {} instr_id: {} vaddr: {:#x}\n", __func__, data_packet.instr_id, data_packet.v_address);
   }
@@ -603,7 +694,7 @@ void O3_CPU::do_crac_check(const LSQ_ENTRY& lq_entry)
     crac_table[index].first = crac_table[index].first.value() + 1U;
 
   /* Just for debug. Logs into output.txt if "freopen( "output.txt", "w", stdout );" included in main.cc. */
-  std::cout << "Load key : " << index <<" VA : " << lq_entry.virtual_address << " index : " << index << " CRAC value : " \
+  //std::cout << "Load key : " << index <<" VA : " << lq_entry.virtual_address << " index : " << index << " CRAC value : " \
             <<crac_table[index].first.value() << " CRAC ip : " << crac_table[index].second << " LQ ip : " << lq_entry.ip \
             << std::endl;
 }
@@ -718,7 +809,7 @@ void O3_CPU::update_clap_table()
         auto clap_index = rob_entry->ip % ::CLAP_TABLE_PRIME;
         clap_table[clap_index] = entry.second.first.value() - 1U;
         /* Just for debug. Logs into output.txt if "freopen( "output.txt", "w", stdout );" included in main.cc. */
-        std::cout << "CLAP key : " << clap_index << " CLAP value : " \
+        //std::cout << "CLAP key : " << clap_index << " CLAP value : " \
           << clap_table[clap_index].value() << " CLAP ip : " << rob_entry->ip << " CRAC ip : " << entry.second.second << \
           std::endl;
 

@@ -43,6 +43,8 @@
 
 enum STATUS { INFLIGHT = 1, COMPLETED = 2 };
 
+
+
 class CACHE;
 class CacheBus
 {
@@ -94,6 +96,43 @@ struct LSQ_ENTRY {
 class O3_CPU : public champsim::operable
 {
 public:
+  /********************** CLAR and CMAP definition and declaration **********************************/
+  /* MACRO To define entry count of CLAR*/
+  #define LOAD_WORD_SIZE 4 //Defining load to move 4 bytes of data
+  #define REGION_SIZE BLOCK_SIZE //Defining a CLAR region as the size of a Cache Block 
+  #define CLAR_LOAD_WORD_COUNT REGION_SIZE/LOAD_WORD_SIZE
+  #define CMAP_TABLE_SIZE 256 //Defining as 256 for the number of CMAP entries - number of architectural registers
+
+  /* Definition of Struct CLAR */
+    struct clardef{
+    uint8_t valid;
+    uint8_t data_rdy;
+    uint64_t prc;
+    uint64_t rva;
+    uint64_t cpte;
+    uint64_t active_count;
+    std::array<uint64_t, CLAR_LOAD_WORD_COUNT> storage_elements ;
+
+    //Custom constructor to initialize all members to zero
+    clardef() : valid(0), data_rdy(0), prc(0), rva(0), cpte(0), active_count(0), storage_elements{} {}
+        
+  };
+
+  /* Definition of Struct CMAP */
+  struct cmapdef{
+    uint8_t valid_cmap;
+    uint64_t storage_element_index;
+    clardef CLAR;
+    ooo_model_instr instr_cmap;
+    uint64_t region_number;
+
+    //Custom constructor
+    cmapdef() : valid_cmap(0), storage_element_index(0), CLAR(), instr_cmap(), region_number(0) {}
+  };
+
+  //declaring CMAP//
+  std::array<cmapdef, CMAP_TABLE_SIZE> CMAP;
+  /***************************************************************************************************/
   uint32_t cpu = 0;
 
   // cycle
@@ -130,6 +169,8 @@ public:
 
   std::vector<std::optional<LSQ_ENTRY>> LQ;
   std::deque<LSQ_ENTRY> SQ;
+
+  ////////////////
 
   std::array<std::vector<std::reference_wrapper<ooo_model_instr>>, std::numeric_limits<uint8_t>::max() + 1> reg_producers;
 
