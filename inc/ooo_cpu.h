@@ -99,58 +99,39 @@ public:
   /********************** CLAR and CMAP definition and declaration **********************************/
   /* MACRO To define entry count of CLAR*/
   #define LOAD_WORD_SIZE 4 //Defining load to move 4 bytes of data
-  #define CLAR_LOAD_WORD_COUNT BLOCK_SIZE/LOAD_WORD_SIZE
-  #define CMAP_TABLE_SIZE 256 //Defining as 256 for the number of CMAP entries - number of architectural registers
   #define REGION_SIZE BLOCK_SIZE //Defining a CLAR region as the size of a Cache Block 
+  #define CLAR_LOAD_WORD_COUNT REGION_SIZE/LOAD_WORD_SIZE
+  #define CMAP_TABLE_SIZE 256 //Defining as 256 for the number of CMAP entries - number of architectural registers
+
   /* Definition of Struct CLAR */
-  // struct clardef{
-  //   uint8_t valid = 0;
-  //   uint8_t data_rdy = 0;
-  //   uint64_t prc = 0;
-  //   uint8_t bank_no = 0;
-  //   uint64_t rva = 0; //check bit length
-  //   uint64_t cpte = 0; //check bit length
-  //   uint64_t active_count = 0;
-  //   std::array<uint64_t, CLAR_LOAD_WORD_COUNT> store_ele = {};
-
-  // };
-
-  // /* Definition of Struct CMAP */
-  // struct cmapdef{
-  //   uint8_t valid_cmap = 0;
-  //   uint8_t bank_no_cmap = 0;
-  //   uint64_t store_ele_cmap = 0;
-  //   uint16_t regno = 0;
-  //   clardef cd;
-  //   ooo_model_instr instr_cmap;
-  //   uint64_t region_number = 0;
-  // };
-
     struct clardef{
     uint8_t valid;
     uint8_t data_rdy;
     uint64_t prc;
-    uint8_t bank_no;
-    uint64_t rva; //check bit length
-    uint64_t cpte; //check bit length
+    uint64_t rva;
+    uint64_t cpte;
     uint64_t active_count;
-    std::array<uint64_t, CLAR_LOAD_WORD_COUNT> store_ele;
+    std::array<uint64_t, CLAR_LOAD_WORD_COUNT> storage_elements ;
 
+    //Custom constructor to initialize all members to zero
+    clardef() : valid(0), data_rdy(0), prc(0), rva(0), cpte(0), active_count(0), storage_elements{} {}
+        
   };
 
   /* Definition of Struct CMAP */
   struct cmapdef{
     uint8_t valid_cmap;
-    uint8_t bank_no_cmap;
-    uint64_t store_ele_cmap;
-    uint16_t regno;
-    clardef cd;
+    uint64_t storage_element_index;
+    clardef CLAR;
     ooo_model_instr instr_cmap;
-    uint64_t region_number ;
+    uint64_t region_number;
+
+    //Custom constructor
+    cmapdef() : valid_cmap(0), storage_element_index(0), CLAR(), instr_cmap(), region_number(0) {}
   };
 
   //declaring CMAP//
-  std::deque<cmapdef> CMAP;
+  std::array<cmapdef, CMAP_TABLE_SIZE> CMAP;
   /***************************************************************************************************/
   uint32_t cpu = 0;
 

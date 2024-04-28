@@ -138,6 +138,15 @@ public:
   ooo_model_instr(uint8_t cpu, input_instr instr) : ooo_model_instr(instr, {cpu, cpu}) {}
   ooo_model_instr(uint8_t, cloudsuite_instr instr) : ooo_model_instr(instr, {instr.asid[0], instr.asid[1]}) {}
 
+  // New Default constructor for ooo_model_instr
+  ooo_model_instr() : instr_id(0), ip(0), event_cycle(0), load_clc(0), is_load(false),
+                    is_branch(false), branch_taken(false), branch_prediction(false),
+                    branch_mispredicted(false), asid{std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()},
+                    branch_type(NOT_BRANCH), branch_target(0), dib_checked(0), fetched(0),
+                    decoded(0), scheduled(0), executed(0), completed_mem_ops(0), num_reg_dependent(0),
+                    destination_registers{}, source_registers{}, destination_memory{}, source_memory{},
+                    registers_instrs_depend_on_me{} {}
+
   std::size_t num_mem_ops() const { return std::size(destination_memory) + std::size(source_memory); }
 
   static bool program_order(const ooo_model_instr& lhs, const ooo_model_instr& rhs) { return lhs.instr_id < rhs.instr_id; }
