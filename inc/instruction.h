@@ -47,8 +47,9 @@ struct ooo_model_instr {
   uint64_t load_clc = 0;
   bool is_load = 0;
 
-  bool PFLC = 0;
-  bool is_fatload = 0;
+  bool PFLC = 0; //Used to update CLAP table for potential fat loads
+  bool is_fatload = 0; // Indicate a potential fatload predicted by CLAP
+  bool is_clar = 0; // Indicate a Load classified as CLAR in dispatch
   bool is_branch = 0;
   bool branch_taken = 0;
   bool branch_prediction = 0;

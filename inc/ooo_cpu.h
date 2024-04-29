@@ -81,6 +81,7 @@ struct LSQ_ENTRY {
   uint64_t virtual_address = 0;
   uint64_t ip = 0;
   uint64_t event_cycle = 0;
+  bool is_clar = 0; // Indicate a Load classified as CLAR in dispatch
 
   std::array<uint8_t, 2> asid = {std::numeric_limits<uint8_t>::max(), std::numeric_limits<uint8_t>::max()};
   bool fetch_issued = false;

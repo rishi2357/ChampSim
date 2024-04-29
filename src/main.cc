@@ -19,6 +19,7 @@
 #include <numeric>
 #include <string>
 #include <vector>
+#include <cstdio>
 
 #include "champsim.h"
 #include "champsim_constants.h"
@@ -40,6 +41,7 @@ int main(int argc, char** argv)
   champsim::configured::generated_environment gen_environment{};
 
   CLI::App app{"A microarchitecture simulator for research and education"};
+  freopen( "output_int.txt", "w", stdout );
 
   bool knob_cloudsuite{false};
   uint64_t warmup_instructions = 0;
