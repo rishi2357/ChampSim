@@ -148,6 +148,18 @@ public:
   // instruction
   uint64_t num_retired = 0;
 
+  /* Collect load metrics */
+  uint64_t potential_fatloads         = 0;
+  uint64_t num_loads_dispatched       = 0;
+  uint64_t num_loads_executed         = 0;
+  uint64_t num_loads_sq_forwarded     = 0;
+  uint64_t num_load_fat_dispatched    = 0;
+  uint64_t num_load_clar_dispatched   = 0;
+  uint64_t num_load_normal_dispatched = 0;
+  uint64_t num_load_fat_executed      = 0;
+  uint64_t num_load_clar_executed     = 0;
+  uint64_t num_load_normal_executed   = 0;
+  
   bool show_heartbeat = true;
 
   using stats_type = cpu_stats;

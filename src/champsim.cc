@@ -105,10 +105,27 @@ phase_stats do_phase(phase_info phase, environment& env, std::vector<tracereader
   }
 
   for (O3_CPU& cpu : env.cpu_view()) {
-    fmt::print("{} complete CPU {} instructions: {} cycles: {} cumulative IPC: {:.4g} (Simulation time: {:%H hr %M min %S sec})\n", phase_name, cpu.cpu,
-               cpu.sim_instr(), cpu.sim_cycle(), std::ceil(cpu.sim_instr()) / std::ceil(cpu.sim_cycle()), elapsed_time());
+    fmt::print("{} complete CPU {} instructions: {} cycles: {} cumulative IPC: {:.4g} (Simulation time: {:%H hr %M min %S sec}) \n", phase_name, cpu.cpu, cpu.sim_instr(), cpu.sim_cycle(), std::ceil(cpu.sim_instr()) / std::ceil(cpu.sim_cycle()), elapsed_time());
   }
 
+  for (O3_CPU& cpu : env.cpu_view()) {
+    fmt::print("Potential Fatloads: {}\n", cpu.potential_fatloads);
+  }
+
+  for (O3_CPU& cpu : env.cpu_view()) {
+    fmt::print("Loads Dispatched: {} Loads Executed: {} Loads Forwarded: {}\n", cpu.num_loads_dispatched, cpu.num_loads_executed, cpu.num_loads_sq_forwarded);
+  }
+
+  for (O3_CPU& cpu : env.cpu_view()) {
+    fmt::print("Total Loads Dispatched: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {}\n", cpu.num_loads_dispatched, \
+                cpu.num_load_clar_dispatched, cpu.num_load_fat_dispatched, cpu.num_load_normal_dispatched);
+  }
+
+  for (O3_CPU& cpu : env.cpu_view()) {
+    fmt::print("Total Loads Executed: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {}\n", cpu.num_loads_executed, \
+                cpu.num_load_clar_executed, cpu.num_load_fat_executed, cpu.num_load_normal_executed);
+  }
+  
   phase_stats stats;
   stats.name = phase.name;
 
