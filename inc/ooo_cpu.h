@@ -108,6 +108,12 @@ public:
   // instruction
   uint64_t num_retired = 0;
 
+  /* Counter for L1D cache load accesses and loads */
+  uint64_t baseline_num_l1d_load_accesses  = 0U;
+  uint64_t baseline_num_loads_dispatched   = 0U;
+  uint64_t baseline_num_loads_executed     = 0U;
+  uint64_t baseline_num_loads_sq_forwarded = 0U;
+
   bool show_heartbeat = true;
 
   using stats_type = cpu_stats;

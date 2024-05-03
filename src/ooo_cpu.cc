@@ -331,6 +331,13 @@ long O3_CPU::dispatch_instruction()
          && ((std::size_t)std::count_if(std::begin(LQ), std::end(LQ), [](const auto& lq_entry) { return !lq_entry.has_value(); })
              >= std::size(DISPATCH_BUFFER.front().source_memory))
          && ((std::size(DISPATCH_BUFFER.front().destination_memory) + std::size(SQ)) <= SQ_SIZE)) {
+    
+    //For each dispatch instruction, check if it is a load based on non-empty source memory operands.
+    if(DISPATCH_BUFFER.front().source_memory.size() != 0) {
+      /* Collect dispatched loads metric. */
+      baseline_num_loads_dispatched += 1U;
+    }
+
     ROB.push_back(std::move(DISPATCH_BUFFER.front()));
     DISPATCH_BUFFER.pop_front();
     do_memory_scheduling(ROB.back());
@@ -428,6 +435,8 @@ void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
       return lhs.virtual_address != smem || (rhs.virtual_address == smem && lhs.instr_id < rhs.instr_id);
     });
     if (sq_it != std::end(SQ) && sq_it->virtual_address == smem) {
+      /* Collect forwarded loads from SQ metric. */
+      baseline_num_loads_sq_forwarded += 1U;
       if (sq_it->fetch_issued) { // Store already executed
         q_entry->reset();
         ++instr.completed_mem_ops;
@@ -487,6 +496,7 @@ long O3_CPU::operate_lsq()
       if (success) {
         --load_bw;
         lq_entry->fetch_issued = true;
+        baseline_num_loads_executed += 1U;
       }
     }
   }
@@ -528,6 +538,8 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
   data_packet.v_address = lq_entry.virtual_address;
   data_packet.instr_id = lq_entry.instr_id;
   data_packet.ip = lq_entry.ip;
+
+  baseline_num_l1d_load_accesses += 1U;
 
   if constexpr (champsim::debug_print) {
     fmt::print("[LQ] {} instr_id: {} vaddr: {:#x}\n", __func__, data_packet.instr_id, data_packet.v_address);

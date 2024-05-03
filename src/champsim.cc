@@ -109,6 +109,12 @@ phase_stats do_phase(phase_info phase, environment& env, std::vector<tracereader
                cpu.sim_instr(), cpu.sim_cycle(), std::ceil(cpu.sim_instr()) / std::ceil(cpu.sim_cycle()), elapsed_time());
   }
 
+  for (O3_CPU& cpu : env.cpu_view()) {
+    fmt::print("Loads Dispatched: {} Loads Executed: {} Loads Forwarded from SQ: {} L1D Load Accesses: {}\n", \
+                cpu.baseline_num_loads_dispatched, cpu.baseline_num_loads_executed, cpu.baseline_num_loads_sq_forwarded,\
+                cpu.baseline_num_l1d_load_accesses);
+  }
+
   phase_stats stats;
   stats.name = phase.name;
 
