@@ -108,12 +108,15 @@ phase_stats do_phase(phase_info phase, environment& env, std::vector<tracereader
     fmt::print("{} complete CPU {} instructions: {} cycles: {} cumulative IPC: {:.4g} (Simulation time: {:%H hr %M min %S sec})\n", phase_name, cpu.cpu,
                cpu.sim_instr(), cpu.sim_cycle(), std::ceil(cpu.sim_instr()) / std::ceil(cpu.sim_cycle()), elapsed_time());
   }
-
-  for (O3_CPU& cpu : env.cpu_view()) {
-    fmt::print("Loads Dispatched: {} Loads Executed: {} Loads Forwarded from SQ: {} L1D Load Accesses: {}\n", \
-                cpu.baseline_num_loads_dispatched, cpu.baseline_num_loads_executed, cpu.baseline_num_loads_sq_forwarded,\
-                cpu.baseline_num_l1d_load_accesses);
-  }
+  
+  if(!is_warmup)
+      for (O3_CPU& cpu : env.cpu_view()) {
+        fmt::print("Loads Dispatched: {} \nLoads Executed: {} \nLoads Forwarded from SQ: {} \nL1D Load Accesses: {}\nLoads Retired: {}\n", \
+                    cpu.baseline_num_loads_dispatched, cpu.baseline_num_loads_executed, cpu.baseline_num_loads_sq_forwarded,\
+                    cpu.baseline_num_l1d_load_accesses, cpu.baseline_num_loads_retired);
+        fmt::print("Branches Dispatched: {} \nBranches Mispredicted: {} \nBranches Retired: {} \n", \
+                    cpu.baseline_num_branches, cpu.baseline_num_branches_mispredicted, cpu.baseline_num_branches_retired);
+      }
 
   phase_stats stats;
   stats.name = phase.name;
