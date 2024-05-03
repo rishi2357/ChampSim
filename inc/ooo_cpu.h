@@ -113,6 +113,12 @@ public:
   uint64_t baseline_num_loads_dispatched   = 0U;
   uint64_t baseline_num_loads_executed     = 0U;
   uint64_t baseline_num_loads_sq_forwarded = 0U;
+  uint64_t baseline_num_loads_retired = 0U;
+
+  /* Counters for branch instructions */
+  uint64_t baseline_num_branches = 0U;
+  uint64_t baseline_num_branches_retired = 0U;
+  uint64_t baseline_num_branches_mispredicted = 0U;
 
   bool show_heartbeat = true;
 

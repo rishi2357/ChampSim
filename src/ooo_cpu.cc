@@ -160,6 +160,8 @@ bool O3_CPU::do_predict_branch(ooo_model_instr& arch_instr)
     if constexpr (champsim::debug_print) {
       fmt::print("[BRANCH] instr_id: {} ip: {:#x} taken: {}\n", arch_instr.instr_id, arch_instr.ip, arch_instr.branch_taken);
     }
+    /* Increment counter for number of branches */
+    baseline_num_branches++;
 
     // call code prefetcher every time the branch predictor is used
     l1i->impl_prefetcher_branch_operate(arch_instr.ip, arch_instr.branch_type, predicted_branch_target);
@@ -568,8 +570,10 @@ void O3_CPU::do_complete_execution(ooo_model_instr& instr)
       dependent.scheduled = COMPLETED;
   }
 
-  if (instr.branch_mispredicted)
+  if (instr.branch_mispredicted){
     fetch_resume_cycle = current_cycle + BRANCH_MISPREDICT_PENALTY;
+    baseline_num_branches_mispredicted++;
+  }
 }
 
 long O3_CPU::complete_inflight_instruction()
@@ -637,6 +641,12 @@ long O3_CPU::retire_rob()
   if constexpr (champsim::debug_print) {
     std::for_each(retire_begin, retire_end, [](const auto& x) { fmt::print("[ROB] retire_rob instr_id: {} is retired\n", x.instr_id); });
   }
+
+  /* Track retired loads and branches */
+  
+
+  std::for_each(retire_begin, retire_end, [this](const auto& x) { if(x.is_branch) baseline_num_branches_retired++;  else if(x.source_memory.size() != 0) baseline_num_loads_retired++;});
+
   auto retire_count = std::distance(retire_begin, retire_end);
   num_retired += retire_count;
   ROB.erase(retire_begin, retire_end);
