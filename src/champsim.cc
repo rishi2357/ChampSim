@@ -122,8 +122,8 @@ phase_stats do_phase(phase_info phase, environment& env, std::vector<tracereader
   }
 
   for (O3_CPU& cpu : env.cpu_view()) {
-    fmt::print("Total Loads Executed: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {}\n", cpu.num_loads_executed, \
-                cpu.num_load_clar_executed, cpu.num_load_fat_executed, cpu.num_load_normal_executed);
+    fmt::print("Total Loads Executed: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {} L1D Load Accesses: {}\n", cpu.num_loads_executed, \
+                cpu.num_load_clar_executed, cpu.num_load_fat_executed, cpu.num_load_normal_executed, cpu.num_l1d_load_accesses);
   }
   
   phase_stats stats;

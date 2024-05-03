@@ -140,13 +140,11 @@ bool champsim::channel::do_add_queue(R& queue, std::size_t queue_size, const typ
 
 bool champsim::channel::add_rq(const request_type& packet)
 {
-  /* Don't increment cache access count if load is CLAR. */
-  if(!packet.is_clar)
-    sim_stats.RQ_ACCESS++;
+  sim_stats.RQ_ACCESS++;
 
   auto result = do_add_queue(RQ, RQ_SIZE, packet);
 
-  if (result && !packet.is_clar)
+  if (result)
     sim_stats.RQ_TO_CACHE++;
   else
     sim_stats.RQ_FULL++;

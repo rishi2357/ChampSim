@@ -150,6 +150,7 @@ public:
 
   /* Collect load metrics */
   uint64_t potential_fatloads         = 0;
+  uint64_t num_l1d_load_accesses      = 0;
   uint64_t num_loads_dispatched       = 0;
   uint64_t num_loads_executed         = 0;
   uint64_t num_loads_sq_forwarded     = 0;

@@ -41,15 +41,13 @@ constexpr std::size_t CLAP_TABLE_SIZE  = 512;
 constexpr std::size_t CLAP_TABLE_PRIME = 509;
 constexpr std::size_t CLC_BITS         = 4;
 
-std::map<uint64_t, std::pair<champsim::msl::fwcounter<CLC_BITS>, uint64_t>> clap_table;
+std::map<uint64_t, champsim::msl::fwcounter<CLC_BITS>> clap_table;
 
 /* CRAC definitions */
 constexpr std::size_t CRAC_TABLE_SIZE  = 64;
 constexpr std::size_t RAC_BITS         = 4;
 
 std::map<uint8_t, std::pair<champsim::msl::fwcounter<RAC_BITS>, uint64_t>> crac_table;
-
-champsim::msl::fwcounter<CLC_BITS> rac_count;
 }
 
 std::chrono::seconds elapsed_time();
@@ -274,14 +272,10 @@ long O3_CPU::fetch_instruction()
       std::for_each(l1i_req_begin, l1i_req_end, [&](auto& x) {
           auto clap_index = x.ip % ::CLAP_TABLE_PRIME;
           if(clap_table.find(clap_index) != clap_table.end()) {
-            auto &clap_it = clap_table[clap_index];
-            if(clap_it.second == x.ip) {
-              x.is_fatload        = true;
-              x.load_clc          = clap_it.first.value();
-              potential_fatloads += 1U;
-              //std::cout<< " Found a fatload! " << x.ip << " CLAP value = " << x.load_clc <<std::endl;
+            x.is_fatload        = true;
+            x.load_clc          = clap_table[clap_index].value();
+            //std::cout<< " Found a fatload! " << x.ip << " CLAP value = " << x.load_clc <<std::endl;
             }
-          }
           else
             x.is_fatload = false;
           });
@@ -384,6 +378,9 @@ long O3_CPU::dispatch_instruction()
       //Service instruction only if it is a load with one source memory
       if(DISPATCH_BUFFER.front().is_load && DISPATCH_BUFFER.front().is_fatload)
       {
+        /* Collect potential fat load candidates metric. */
+        potential_fatloads += 1U;
+        
         // Find the CMAP bank (row) with the smallest PRC value
         auto minPRC_CMAP_it    = std::min_element(CMAP.begin(), CMAP.end(), [](const cmapdef& a, const cmapdef& b) {return a.CLAR.prc < b.CLAR.prc;});
         auto minPRC_CMAP_Entry = minPRC_CMAP_it - CMAP.begin();
@@ -654,20 +651,19 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
   data_packet.v_address = lq_entry.virtual_address;
   data_packet.instr_id = lq_entry.instr_id;
   data_packet.ip = lq_entry.ip;
-  data_packet.is_clar = false;
 
-  //adding load clar here
-  // Calculate the region address from the load address
   bool valid_load_clar = false;
   bool valid_load_fat  = false;
-
+  
+  //adding load clar here
+  // Calculate the region address from the load address
   auto lq_load_region_address = lq_entry.virtual_address / REGION_SIZE;
 
   if(lq_entry.is_clar) {
     for(uint64_t CMAP_INDEX = 0; CMAP_INDEX < CMAP_TABLE_SIZE; CMAP_INDEX++){
       if(CMAP[CMAP_INDEX].CLAR.valid && CMAP[CMAP_INDEX].CLAR.data_rdy && (lq_load_region_address == CMAP[CMAP_INDEX].region_number))
       {
-        CMAP[CMAP_INDEX].CLAR.active_count--; 
+        CMAP[CMAP_INDEX].CLAR.active_count--; //Decrement Active Accesses to LOAD-CLAR-bank
         //fmt::print("CLAR load executed, instr_id: {} ip: {:#x}\n", lq_entry.instr_id, lq_entry.ip);
         valid_load_clar = true;
         break;
@@ -676,10 +672,9 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
   }
 
   if(valid_load_clar) {
-    data_packet.is_clar = true;
     /* Collect executed CLARs metric. */
     num_load_clar_executed += 1U;
-    return L1D_bus.issue_read(data_packet);; //CLAR is able to handle the load, don't increment L1 cache accesses, decrement Active Accesses to LOAD-CLAR-bank
+    return L1D_bus.issue_read(data_packet); //CLAR is able to handle the load, don't increment L1 cache accesses.
   }
   else {
     //If Load is Fat-Load, service with L1 Access and update CLAR
@@ -706,8 +701,9 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
   }
 
   if(valid_load_fat) {
-    /* Collect executed load fats metric. */
+    /* Collect executed load fats and L1D load access metrics. */
     num_load_fat_executed += 1U;
+    num_l1d_load_accesses += 1U;
     return true;
   }
   else {
@@ -715,8 +711,9 @@ bool O3_CPU::execute_load(const LSQ_ENTRY& lq_entry)
       fmt::print("[LQ] {} instr_id: {} vaddr: {:#x}\n", __func__, data_packet.instr_id, data_packet.v_address);
     }
 
-    /* Collect executed normal loads metric. */
+    /* Collect executed normal load and L1D cache access metrics. */
     num_load_normal_executed += 1U;
+    num_l1d_load_accesses += 1U;
     //fmt::print("Normal load executed, instr_id: {} ip: {:#x}\n", lq_entry.instr_id, lq_entry.ip);
     return L1D_bus.issue_read(data_packet);
   }
@@ -868,8 +865,7 @@ void O3_CPU::update_clap_table()
     std::for_each(std::begin(crac_table), std::end(crac_table), [&](auto& entry) {
       if(entry.second.second == rob_entry->ip) {
         auto clap_index = rob_entry->ip % ::CLAP_TABLE_PRIME;
-        clap_table[clap_index].first  = entry.second.first.value() - 1U;
-        clap_table[clap_index].second = entry.second.second;
+        clap_table[clap_index] = entry.second.first.value() - 1U;
         /* Just for debug. Logs into output.txt if "freopen( "output.txt", "w", stdout );" included in main.cc. */
         //std::cout << "CLAP key : " << clap_index << " CLAP value : " \
           << clap_table[clap_index].value() << " CLAP ip : " << rob_entry->ip << " CRAC ip : " << entry.second.second << \
