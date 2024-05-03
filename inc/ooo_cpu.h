@@ -148,19 +148,26 @@ public:
   // instruction
   uint64_t num_retired = 0;
 
-  /* Collect load metrics */
-  uint64_t potential_fatloads         = 0;
-  uint64_t num_l1d_load_accesses      = 0;
-  uint64_t num_loads_dispatched       = 0;
-  uint64_t num_loads_executed         = 0;
-  uint64_t num_loads_sq_forwarded     = 0;
-  uint64_t num_load_fat_dispatched    = 0;
-  uint64_t num_load_clar_dispatched   = 0;
-  uint64_t num_load_normal_dispatched = 0;
-  uint64_t num_load_fat_executed      = 0;
-  uint64_t num_load_clar_executed     = 0;
-  uint64_t num_load_normal_executed   = 0;
-  
+  /* Collect load metrics */    
+  uint64_t potential_fatloads             = 0U;
+  uint64_t num_l1d_load_accesses          = 0U;
+  uint64_t num_loads_dispatched           = 0U;
+  uint64_t num_loads_executed             = 0U;
+  uint64_t num_loads_sq_forwarded         = 0U;
+  uint64_t num_loads_sq_forwarded_to_clar = 0U;
+  uint64_t num_load_fat_dispatched        = 0U;
+  uint64_t num_load_clar_dispatched       = 0U;
+  uint64_t num_load_normal_dispatched     = 0U;
+  uint64_t num_load_fat_executed          = 0U;
+  uint64_t num_load_clar_executed         = 0U;
+  uint64_t num_load_normal_executed       = 0U;
+  uint64_t num_loads_retired              = 0U;
+
+  /* Counters for branch instructions */
+  uint64_t num_branches                   = 0U;
+  uint64_t num_branches_retired           = 0U;
+  uint64_t num_branches_mispredicted      = 0U;
+
   bool show_heartbeat = true;
 
   using stats_type = cpu_stats;

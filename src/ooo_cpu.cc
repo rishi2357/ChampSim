@@ -180,6 +180,8 @@ bool O3_CPU::do_predict_branch(ooo_model_instr& arch_instr)
     if constexpr (champsim::debug_print) {
       fmt::print("[BRANCH] instr_id: {} ip: {:#x} taken: {}\n", arch_instr.instr_id, arch_instr.ip, arch_instr.branch_taken);
     }
+    /* Instruction is a branch - Increment counter for number of branches */
+    num_branches++;
 
     // call code prefetcher every time the branch predictor is used
     l1i->impl_prefetcher_branch_operate(arch_instr.ip, arch_instr.branch_type, predicted_branch_target);
@@ -535,6 +537,7 @@ void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
     auto q_entry = std::find_if_not(std::begin(LQ), std::end(LQ), [](const auto& lq_entry) { return lq_entry.has_value(); });
     assert(q_entry != std::end(LQ));
     q_entry->emplace(instr.instr_id, smem, instr.ip, instr.asid); // add it to the load queue
+    /*Set is_loadClar for the LQ Entries*/
     if(instr.is_clar)
       q_entry->value().is_clar = true;
     else
@@ -547,6 +550,23 @@ void O3_CPU::do_memory_scheduling(ooo_model_instr& instr)
     if (sq_it != std::end(SQ) && sq_it->virtual_address == smem) {
       /* Collect forwarded loads from SQ metric. */
       num_loads_sq_forwarded += 1U;
+      /* Keep a flag to check whether any one CMAP INDEX gets forwarded data from a store*/
+      bool store_to_clar_forward = false;
+      /* For the forwarded load, check if the source address corresponds to a region in the CMAP table*/
+      // Calculate the region address from the load address
+      auto sq_fwd_region_address = smem / REGION_SIZE;
+      for(uint64_t CMAP_INDEX = 0; CMAP_INDEX < CMAP_TABLE_SIZE; CMAP_INDEX++){
+        if(sq_fwd_region_address == CMAP[CMAP_INDEX].region_number)
+        {
+          CMAP[CMAP_INDEX].CLAR.valid = true;
+          CMAP[CMAP_INDEX].CLAR.data_rdy = true;
+          store_to_clar_forward = true;
+        }
+      }
+
+      if(store_to_clar_forward)
+        num_loads_sq_forwarded_to_clar++;
+
       if (sq_it->fetch_issued) { // Store already executed
         q_entry->reset();
         ++instr.completed_mem_ops;
@@ -777,8 +797,10 @@ void O3_CPU::do_complete_execution(ooo_model_instr& instr)
       dependent.scheduled = COMPLETED;
   }
 
-  if (instr.branch_mispredicted)
+  if(instr.branch_mispredicted){
+    num_branches_mispredicted++;
     fetch_resume_cycle = current_cycle + BRANCH_MISPREDICT_PENALTY;
+  }
 }
 
 long O3_CPU::complete_inflight_instruction()
@@ -846,6 +868,10 @@ long O3_CPU::retire_rob()
   if constexpr (champsim::debug_print) {
     std::for_each(retire_begin, retire_end, [](const auto& x) { fmt::print("[ROB] retire_rob instr_id: {} is retired\n", x.instr_id); });
   }
+
+  /* Track retired loads and branches */
+  std::for_each(retire_begin, retire_end, [this](const auto& x) { if(x.is_branch) num_branches_retired++;  else if(x.source_memory.size() != 0) num_loads_retired++;});
+
   auto retire_count = std::distance(retire_begin, retire_end);
   num_retired += retire_count;
   update_clap_table();

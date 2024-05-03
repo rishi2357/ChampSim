@@ -107,25 +107,29 @@ phase_stats do_phase(phase_info phase, environment& env, std::vector<tracereader
   for (O3_CPU& cpu : env.cpu_view()) {
     fmt::print("{} complete CPU {} instructions: {} cycles: {} cumulative IPC: {:.4g} (Simulation time: {:%H hr %M min %S sec}) \n", phase_name, cpu.cpu, cpu.sim_instr(), cpu.sim_cycle(), std::ceil(cpu.sim_instr()) / std::ceil(cpu.sim_cycle()), elapsed_time());
   }
+  if(!is_warmup){
+      for (O3_CPU& cpu : env.cpu_view()) {
+        fmt::print("Potential Fatloads: {}\n", cpu.potential_fatloads);
+      }
 
-  for (O3_CPU& cpu : env.cpu_view()) {
-    fmt::print("Potential Fatloads: {}\n", cpu.potential_fatloads);
-  }
+      for (O3_CPU& cpu : env.cpu_view()) {
+        fmt::print("Loads Dispatched: {} Loads Executed: {} Total SQ-Forwarded Loads: {}\n", cpu.num_loads_dispatched, cpu.num_loads_executed, cpu.num_loads_sq_forwarded);
+      }
 
-  for (O3_CPU& cpu : env.cpu_view()) {
-    fmt::print("Loads Dispatched: {} Loads Executed: {} Loads Forwarded: {}\n", cpu.num_loads_dispatched, cpu.num_loads_executed, cpu.num_loads_sq_forwarded);
-  }
+      for (O3_CPU& cpu : env.cpu_view()) {
+        fmt::print("Total Loads Dispatched: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {}\n", cpu.num_loads_dispatched, \
+                    cpu.num_load_clar_dispatched, cpu.num_load_fat_dispatched, cpu.num_load_normal_dispatched);
+      }
 
-  for (O3_CPU& cpu : env.cpu_view()) {
-    fmt::print("Total Loads Dispatched: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {}\n", cpu.num_loads_dispatched, \
-                cpu.num_load_clar_dispatched, cpu.num_load_fat_dispatched, cpu.num_load_normal_dispatched);
+      for (O3_CPU& cpu : env.cpu_view()) {
+        fmt::print("Total Loads Executed: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {} L1D Load Accesses: {} SQ-Forwarded CLAR Loads: {}, Total Loads Retired: {}\n", cpu.num_loads_executed, \
+                    cpu.num_load_clar_executed, cpu.num_load_fat_executed, cpu.num_load_normal_executed, cpu.num_l1d_load_accesses, cpu.num_loads_sq_forwarded_to_clar, cpu.num_loads_retired);
+      }
+      
+      for (O3_CPU& cpu : env.cpu_view()) {
+        fmt::print("Total Branches Dispatched: {} Branches Mispredicted: {} Branches Retired: {} \n", cpu.num_branches, cpu.num_branches_mispredicted, cpu.num_branches_retired);
+      }
   }
-
-  for (O3_CPU& cpu : env.cpu_view()) {
-    fmt::print("Total Loads Executed: {} CLAR Loads: {} Fat Loads: {} Normal Loads: {} L1D Load Accesses: {}\n", cpu.num_loads_executed, \
-                cpu.num_load_clar_executed, cpu.num_load_fat_executed, cpu.num_load_normal_executed, cpu.num_l1d_load_accesses);
-  }
-  
   phase_stats stats;
   stats.name = phase.name;
 
